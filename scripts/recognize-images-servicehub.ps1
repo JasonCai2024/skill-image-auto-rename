@@ -5,14 +5,14 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$outputJson,
 
-    [Parameter(Mandatory=$true)]
-    [string]$username,
-
-    [Parameter(Mandatory=$true)]
-    [string]$passtoken,
+    [Parameter(Mandatory=$false)]
+    [string]$username = $env:SERVICETUBER_USERNAME,
 
     [Parameter(Mandatory=$false)]
-    [string]$baseUrl = "https://www.ccailab.top",
+    [string]$passtoken = $env:SERVICETUBER_PASSTOKEN,
+
+    [Parameter(Mandatory=$false)]
+    [string]$baseUrl = $null,
 
     [Parameter(Mandatory=$false)]
     [string]$endpoint = "/api/llm/paid-rotation",
@@ -35,7 +35,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# 1. 验证输入
+# 1. 验证输入与凭证
+if ([string]::IsNullOrEmpty($username)) {
+    throw "未提供用户名。请在参数中传递 -username 或配置环境变量 SERVICETUBER_USERNAME。"
+}
+if ([string]::IsNullOrEmpty($passtoken)) {
+    throw "未提供凭证。请在参数中传递 -passtoken 或配置环境变量 SERVICETUBER_PASSTOKEN。"
+}
+if ([string]::IsNullOrEmpty($baseUrl)) {
+    $baseUrl = if ($env:SERVICETUBER_BASE_URL) { $env:SERVICETUBER_BASE_URL } else { "https://www.ccailab.top" }
+}
+
 if (-not (Test-Path $downloadDir)) {
     throw "下载文件夹不存在: $downloadDir"
 }

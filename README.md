@@ -55,3 +55,28 @@ skill-image-auto-rename/
 * **绝对文件名映射，杜绝索引漂移**：匹配结果使用 `filename` 映射 `refName`，即使匹配被中途打断、文件排序发生变更或多次重复运行，也绝对不会造成顺序错乱，完全幂等。
 * **时序启发式辅助，内容匹配为主**：通过图片生成时间线（LastWriteTime）提供匹配线索，防止在大批相似背景（如同一个主角和机器人）的分镜中产生匹配漂移。
 * **无匹配容错处理**：如生成的图片数量多于分镜数量（如废弃废稿），对应 `refName` 会被标空 `""`，重命名脚本将安全跳过，防止误删用户资产。
+
+---
+
+## 4. 获取与安装 (Get & Install)
+
+### 克隆仓库 (Clone Repository)
+
+```bash
+git clone https://github.com/JasonCai2024/skill-image-auto-rename.git
+```
+
+安装配置详情，请参阅 [INSTALL.md](./INSTALL.md)。
+
+---
+
+## 5. 凭证安全与隔离规范 (Credential Security)
+
+本技能完全符合 `OpenClaw 智能体技能开发规范：凭证安全与隔离方案` 规范：
+* **无凭据泄露风险**：所有代码库文件（包括脚本和配置文件）均无硬编码的用户名、密码或 API 密钥。
+* **本地配置文件**：敏感凭据统一存放于本地技能根目录下的 `.env` 文件中。`.gitignore` 已对 `.env` 及其本地变体进行强制拦截拦截。
+* **配置范式**：仓库中提供了一个 [`.env.example`](./.env.example) 模版。开源用户可以复制该文件为 `.env` 并填入自己的服务凭证，或者通过设置以下环境变量使技能自动读取：
+  * `SERVICETUBER_USERNAME`：您的 ServiceHub 账户用户名。
+  * `SERVICETUBER_PASSTOKEN`：您的 ServiceHub 账号授权令牌 (passtoken)。
+  * `SERVICETUBER_BASE_URL`：ServiceHub 的接口基础 URL（默认为 `https://www.ccailab.top`）。
+

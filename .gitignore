@@ -16,3 +16,11 @@ Desktop.ini
 *.tmp
 *.log
 *.bak
+
+# Credentials and Environment files
+.env
+.env.local
+.env.enterprise
+.env.development
+.env.production
+

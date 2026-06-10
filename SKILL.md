@@ -1,12 +1,12 @@
 ---
-name: image-auto-rename
+name: skill-image-auto-rename
 description: 第三人称视角。将下载文件夹中批量生成的 AI 配图（如 ChatGPT/MiniMax 命名格式）通过 ServiceHub M3 多模态接口识别图片内容，与 MD 文档中的分镜提示词做纯内容语义匹配，自动按 MD 引用名（如 47-1-1.png）重命名并复制到 MD 文档的 Attachments 子文件夹。适用于短视频分镜配图、绘本分页插图等批量图片与 MD 引用一一对应的场景。使用者需具备 ServiceHub 平台的用户名和密码令牌。
 disable-model-invocation: true
 user-invocable: true
 argument-hint: [MD文档路径]
 ---
 
-# Image Auto Rename
+# Skill Image Auto Rename
 
 ## Goal
 
@@ -16,12 +16,12 @@ argument-hint: [MD文档路径]
 
 ## Required Inputs
 
-加载本技能时，AI 必须向用户**逐一确认**以下信息（不要假设默认值）：
+加载本技能时，AI 必须向用户**逐一确认**以下信息（或通过本地环境变量/ `.env` 配置文件自动装载）：
 
 1. **MD 文档路径**：被处理的 MD 文件绝对路径（必填）
 2. **下载图片文件夹路径**：默认 `C:\Users\pc\Downloads`，可改
-3. **ServiceHub 用户名**：用户在 ServiceHub 平台注册的用户名
-4. **ServiceHub 密码令牌（passtoken）**：用于调 `/api/llm/paid-rotation` 接口
+3. **ServiceHub 用户名**：用户在 ServiceHub 平台注册的用户名（或从环境变量 `SERVICETUBER_USERNAME` 自动载入）
+4. **ServiceHub 密码令牌（passtoken）**：用于调 `/api/llm/paid-rotation` 接口（或从环境变量 `SERVICETUBER_PASSTOKEN` 自动载入）
 5. **匹配方式**（AI agent 部分）：
    - 纯内容一致性匹配（默认，靠 AI 识别图片特征和分镜剧情做语义对齐）
    - 顺序匹配（仅当用户**明确确认**下载顺序完全等于分镜顺序时使用）
