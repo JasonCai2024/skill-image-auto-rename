@@ -1,6 +1,6 @@
 ---
 name: skill-image-auto-rename
-description: 第三人称视角。将下载文件夹中批量生成的 AI 配图（如 ChatGPT/MiniMax 命名格式）通过 ServiceHub M3 多模态接口识别图片内容，与 MD 文档中的分镜提示词做纯内容语义匹配，自动按 MD 引用名（如 47-1-1.png）重命名并复制到 MD 文档的 Attachments 子文件夹。适用于短视频分镜配图、绘本分页插图等批量图片与 MD 引用一一对应的场景。使用者需具备 ServiceHub 平台的用户名和密码令牌。
+description: 将下载文件夹中批量生成的 AI 配图（如 ChatGPT/MiniMax 命名格式）通过 ServiceHub M3 多模态接口识别图片内容，与 MD 文档中的分镜提示词做纯内容语义匹配，自动按 MD 引用名（如 47-1-1.png）重命名并复制到 MD 文档的 Attachments 子文件夹。适用于短视频分镜配图、绘本分页插图等批量图片与 MD 引用一一对应的场景。使用者需具备 ServiceHub 平台的用户名和密码令牌。
 disable-model-invocation: true
 user-invocable: true
 argument-hint: [MD文档路径]

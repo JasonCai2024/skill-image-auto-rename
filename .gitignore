@@ -24,3 +24,13 @@ Desktop.ini
 .env.development
 .env.production
 
+# Local credential fallback files (per Credential Separation spec)
+data/credentials.json
+config.local.json
+
+# Pipeline runtime artifacts (regenerated on every run, never commit)
+storyboards.json
+image_descriptions.json
+match_map.json
+image_match_map.md
+attachments-cache/
