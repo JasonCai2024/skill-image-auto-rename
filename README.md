@@ -25,7 +25,7 @@ graph TD
    * AI 基于内容一致性（人物一致性、动作演进、道具与剧情走向）进行多对多校对，将 `image_descriptions.json` 的原文件名和 `storyboards.json` 中的目标引用文件名进行 1:1 配对。
    * 输出具有幂等性的映射表 `match_map.json` 及人可读的 `image_match_map.md`。
 4. **第 4 步：执行映射与迁移 (`scripts/apply-mapping.ps1`)**
-   * 读取 `match_map.json`，在下载目录下进行原子重命名，并将重命名后的图片一键复制到 Markdown 所在的同级 `Attachments/` 文件夹下。
+   * 读取 `match_map.json`，在下载目录下进行原子重命名，并将高置信度命中的图片复制到 Markdown 所在的同级 `Attachments/` 文件夹下。
 
 ---
 
@@ -60,11 +60,29 @@ skill-image-auto-rename/
 * **内容一致性第一，时间线仅做辅助**：视觉特征（人物、动作、道具、表情、画风）是匹配的决策依据；图片生成时间（LastWriteTime）只作为"疑似线索"提示，不作为最终决策——同款角色、相似姿态的分镜时间靠得近不代表就是它，必须用特征 + 剧情走向二次确认。
 * **多图多引用冲突消解**：同一张图被多个分镜命中、或同一引用被多张图命中时，必须启用 Tie-Breaker 微小差异对比（表情、道具细节、剧情递进），并把次优候选的 `refName` 标记为空 `""`，让重命名脚本安全跳过，避免误占位。
 * **无匹配容错处理**：如生成的图片数量多于分镜数量（如废弃废稿），对应 `refName` 会被标空 `""`，重命名脚本将安全跳过，防止误删用户资产。
+* **按置信度分流**：只有 `confidence = "high"` 的条目会进入重命名与复制；`medium` / `low` 条目应保留原文件名留在下载目录，便于人工复核。
 * **幂等 + 断点续传**：脚本逐张处理，已识别的图、已重命名的图、已复制到 `Attachments/` 的文件都会自动跳过，再次运行不会重复扣费、不会覆盖、不会重复写入。
 
 ---
 
-## 4. 获取与安装 (Get & Install)
+## 4. Obsidian 附件路径说明
+
+本技能的输出路径是固定设计，不跟随 vault 的 Obsidian 配置自动漂移：
+
+* **技能输出目录固定为**：`<MD 所在目录>\Attachments\`
+* **不会读取** `.obsidian/app.json` 里的 `attachmentFolderPath`
+* **不会因为** vault 默认附件目录设为 `./attachments`、`assets/` 或其他位置，就把脚本输出改到 vault 根
+
+这两个概念必须分开：
+
+* `attachmentFolderPath` 只影响你在 Obsidian 里新拖入/粘贴附件时，默认保存到哪里
+* 本技能是在 Markdown 外部批量整理现有图片资产，目标就是让 `![[xxx.png]]` 能在当前 MD 文档上下文中直接解析
+
+如果你的工作流希望 Obsidian 今后新增图片也统一落到 `当前文件夹下的子文件夹/Attachments`，需要在 Obsidian 设置中手动调整新增附件默认位置；这不是本技能自动修改的内容。
+
+---
+
+## 5. 获取与安装 (Get & Install)
 
 ### 克隆仓库 (Clone Repository)
 
@@ -76,7 +94,21 @@ git clone https://github.com/JasonCai2024/skill-image-auto-rename.git
 
 ---
 
-## 5. 凭证安全与隔离规范 (Credential Security)
+## 6. 性能与耗时预期
+
+`recognize-images-servicehub.ps1` 按图片逐张串行调用 MiniMax-M3。这是设计约束，不建议在技能侧叠加并发（例如 `Start-Job`、`RunspacePool`）去抢吞吐。
+
+经验值可按：
+
+* **6-8 秒/张** 估算纯识别耗时
+* **78 张图** 通常约 **8-10 分钟** 纯接口时间
+* 如果中途出现超时、网络重试、工具侧超时再续跑，**总耗时到 30 分钟仍属正常**
+
+脚本支持增量写入和断点续传，所以遇到长任务时，正确处理方式是重跑同一命令继续，而不是人为改造成并发版本。
+
+---
+
+## 7. 凭证安全与隔离规范 (Credential Security)
 
 本技能完全符合 `OpenClaw 智能体技能开发规范：凭证安全与隔离方案` 规范：
 * **无凭据泄露风险**：所有代码库文件（包括脚本和配置文件）均无硬编码的用户名、密码或 API 密钥。
@@ -88,7 +120,7 @@ git clone https://github.com/JasonCai2024/skill-image-auto-rename.git
 
 ---
 
-## 6. 仓库地址与本机凭证
+## 8. 仓库地址与本机凭证
 
 本仓库的 GitHub 远端地址在 `git remote add origin` 时填入，**不应**由本仓库内容硬编码发布地址。
 

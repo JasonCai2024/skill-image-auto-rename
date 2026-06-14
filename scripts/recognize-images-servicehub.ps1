@@ -55,6 +55,7 @@ Write-Host "==== ServiceHub $model 图片识别 ====" -ForegroundColor Cyan
 Write-Host "  下载文件夹: $downloadDir"
 Write-Host "  接口端点: $url"
 Write-Host "  用户名: $username"
+Write-Host "  调用方式: 串行逐张识别（不要自行并发）"
 
 # 2. 获取已识别进度（增量写入 + 断点续传）
 $done = @()
@@ -82,6 +83,18 @@ if ($images.Count -eq 0) {
 # 排除已识别
 $remaining = $images | Where-Object { $_.Name -notin $done }
 Write-Host "  总数: $($images.Count) 剩余: $($remaining.Count)"
+
+$estimatedSecondsPerImage = 8
+$estimatedRemainingSeconds = $remaining.Count * $estimatedSecondsPerImage
+$estimatedCompleteAt = (Get-Date).AddSeconds($estimatedRemainingSeconds)
+if ($remaining.Count -gt 0) {
+    Write-Host ("  预估耗时: 约 {0} 分 {1} 秒（按 {2} 秒/张估算）" -f `
+        [Math]::Floor($estimatedRemainingSeconds / 60), `
+        ($estimatedRemainingSeconds % 60), `
+        $estimatedSecondsPerImage)
+    Write-Host "  预估完成: $($estimatedCompleteAt.ToString('yyyy-MM-dd HH:mm:ss'))"
+    Write-Host "  说明: 大批量任务若中途超时，可直接重跑，脚本会从已识别进度续传" -ForegroundColor Gray
+}
 
 if ($remaining.Count -eq 0) {
     Write-Host "  [完成] 所有图片已识别，无需处理" -ForegroundColor Green
