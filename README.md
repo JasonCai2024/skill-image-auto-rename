@@ -68,11 +68,8 @@ skill-image-auto-rename/
 
 ### 克隆仓库 (Clone Repository)
 
-仓库地址在首次发布时填入，此处仅保留占位符，避免伪造/过期的地址污染开源用户：
-
 ```bash
-# 请将 <your-repo-url> 替换为该技能实际发布的 GitHub 仓库地址
-git clone <your-repo-url>
+git clone https://github.com/JasonCai2024/skill-image-auto-rename.git
 ```
 
 安装配置详情，请参阅 [INSTALL.md](./INSTALL.md)。

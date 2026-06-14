@@ -106,8 +106,8 @@ git commit -m "feat: add skill-image-auto-rename"
 # 3. 切换默认分支
 git branch -M main
 
-# 4. 绑定远端（请将 <your-repo-url> 替换为该技能实际发布的 GitHub 仓库地址）
-git remote add origin <your-repo-url>
+# 4. 绑定远端
+git remote add origin https://github.com/JasonCai2024/skill-image-auto-rename.git
 
 # 5. 推送
 git push -u origin main
