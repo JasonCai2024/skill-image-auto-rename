@@ -93,6 +93,11 @@ Remove-Item -Force "$env:USERPROFILE\.claude\commands\skill-image-auto-rename.md
 
 ## 首次发布到 GitHub
 
+**认证策略**：
+
+默认应使用**非交互式认证**发布，优先读取本机凭证文档中的 GitHub PAT，并通过一次性 HTTP header 完成 `git push`。  
+**不要默认触发浏览器登录、设备码登录或 Git Credential Manager 弹窗**；只有用户明确要求手动登录排障时，才允许走交互式流程。
+
 仓库根目录就是技能目录本身。在仓库根下执行：
 
 ```bash
@@ -109,9 +114,14 @@ git branch -M main
 # 4. 绑定远端
 git remote add origin https://github.com/JasonCai2024/skill-image-auto-rename.git
 
-# 5. 推送
-git push -u origin main
+# 5. 推送（推荐：非交互式 PAT）
+# PowerShell 示例：从本机凭证文档读取 PAT 后，使用一次性 extraheader 推送
+$pair = "<github-username>:<github-pat>"
+$b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $b64" push -u origin main
 ```
+
+如本机已经确认存在稳定可复用的 Git 凭据缓存，也可直接执行普通 `git push`；但对 AI 助理的默认策略，仍应优先选择上面的非交互式方式，避免弹出认证窗口阻塞任务。
 
 **发布前安全检查**：
 
