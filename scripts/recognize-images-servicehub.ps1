@@ -1,281 +1,80 @@
-param(
-    [Parameter(Mandatory=$true)]
+﻿param(
+    [Parameter(Mandatory = $true)]
     [string]$downloadDir,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$outputJson,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$username = $env:SERVICETUBER_USERNAME,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$passtoken = $env:SERVICETUBER_PASSTOKEN,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$baseUrl = $null,
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$endpoint = "/api/llm/paid-rotation",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$provider = "minimax",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$model = "MiniMax-M3",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [string]$imageFilter = "^ChatGPT Image ",
 
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory = $false)]
     [int]$maxRetry = 3,
 
-    [Parameter(Mandatory=$false)]
-    [int]$retrySleepMs = 3000
+    [Parameter(Mandatory = $false)]
+    [int]$retrySleepMs = 3000,
+
+    [Parameter(Mandatory = $false)]
+    [int]$sleepMs = 500,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$DisableMmxFallback
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
 
-# 1. 验证输入与凭证
 if ([string]::IsNullOrEmpty($username)) {
-    throw "未提供用户名。请在参数中传递 -username 或配置环境变量 SERVICETUBER_USERNAME。"
+    throw "未提供用户名。请在参数中传入 -username 或配置环境变量 SERVICETUBER_USERNAME。"
 }
+
 if ([string]::IsNullOrEmpty($passtoken)) {
-    throw "未提供凭证。请在参数中传递 -passtoken 或配置环境变量 SERVICETUBER_PASSTOKEN。"
+    throw "未提供凭证。请在参数中传入 -passtoken 或配置环境变量 SERVICETUBER_PASSTOKEN。"
 }
+
 if ([string]::IsNullOrEmpty($baseUrl)) {
     $baseUrl = if ($env:SERVICETUBER_BASE_URL) { $env:SERVICETUBER_BASE_URL } else { "https://www.ccailab.top" }
 }
 
-if (-not (Test-Path $downloadDir)) {
+if (-not (Test-Path -LiteralPath $downloadDir)) {
     throw "下载文件夹不存在: $downloadDir"
 }
 
-$url = "$baseUrl$endpoint"
-Write-Host "==== ServiceHub $model 图片识别 ====" -ForegroundColor Cyan
+$mmxScriptPath = Join-Path $PSScriptRoot "recognize-images.ps1"
+if (-not (Test-Path -LiteralPath $mmxScriptPath)) {
+    throw "缺少 mmx fallback 脚本: $mmxScriptPath"
+}
+
+Write-Host "==== ServiceHub 兼容包装器 ====" -ForegroundColor Cyan
 Write-Host "  下载文件夹: $downloadDir"
-Write-Host "  接口端点: $url"
-Write-Host "  用户名: $username"
-Write-Host "  调用方式: 串行逐张识别（不要自行并发）"
+Write-Host "  配置端点: $baseUrl$endpoint"
+Write-Host "  配置 provider/model: $provider / $model"
+Write-Host "  状态: 当前自动回退到 mmx CLI" -ForegroundColor Yellow
+Write-Host "  原因: 2026-06-30 实测同一端点对纯文本 user_prompt 返回 200，但对历史多模态数组 + base64 图片请求返回 422。" -ForegroundColor Yellow
+Write-Host "  备注: maxRetry/retrySleepMs 目前仅保留为兼容参数，回退路径不再使用它们。" -ForegroundColor Gray
 
-# 2. 获取已识别进度（增量写入 + 断点续传）
-$done = @()
-if (Test-Path $outputJson) {
-    try {
-        $existing = Get-Content $outputJson -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($existing.images) {
-            $done = @($existing.images | ForEach-Object { $_.filename })
-            Write-Host "  已识别: $($done.Count) 张（断点续传）" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "  [警告] 现有 JSON 解析失败，将覆盖" -ForegroundColor Yellow
-    }
+if ($DisableMmxFallback) {
+    throw "当前 ServiceHub / paid-rotation 端点与本技能历史多模态请求格式不兼容。请改用 scripts/recognize-images.ps1，或等 ServiceHub 提供可用的图片上传 + URL 工作流后再恢复。"
 }
 
-# 3. 获取下载图片
-$images = Get-ChildItem -LiteralPath $downloadDir -Filter "*.png" |
-    Where-Object { $_.Name -match $imageFilter } |
-    Sort-Object LastWriteTime
-
-if ($images.Count -eq 0) {
-    throw "下载文件夹中没有匹配的图片（filter: $imageFilter）: $downloadDir"
-}
-
-# 排除已识别
-$remaining = $images | Where-Object { $_.Name -notin $done }
-Write-Host "  总数: $($images.Count) 剩余: $($remaining.Count)"
-
-$estimatedSecondsPerImage = 8
-$estimatedRemainingSeconds = $remaining.Count * $estimatedSecondsPerImage
-$estimatedCompleteAt = (Get-Date).AddSeconds($estimatedRemainingSeconds)
-if ($remaining.Count -gt 0) {
-    Write-Host ("  预估耗时: 约 {0} 分 {1} 秒（按 {2} 秒/张估算）" -f `
-        [Math]::Floor($estimatedRemainingSeconds / 60), `
-        ($estimatedRemainingSeconds % 60), `
-        $estimatedSecondsPerImage)
-    Write-Host "  预估完成: $($estimatedCompleteAt.ToString('yyyy-MM-dd HH:mm:ss'))"
-    Write-Host "  说明: 大批量任务若中途超时，可直接重跑，脚本会从已识别进度续传" -ForegroundColor Gray
-}
-
-if ($remaining.Count -eq 0) {
-    Write-Host "  [完成] 所有图片已识别，无需处理" -ForegroundColor Green
-    return
-}
-
-# 4. 加载或初始化结果
-if (Test-Path $outputJson) {
-    $data = Get-Content $outputJson -Raw -Encoding UTF8 | ConvertFrom-Json
-} else {
-    $data = @{
-        downloadDir = $downloadDir
-        imageCount   = $images.Count
-        images       = @()
-    }
-}
-
-# 5. 识别 prompt（结构化视觉特征提取）
-$textPrompt = "请提取并列出这张图片中的核心视觉元素，按以下结构分项输出（控制在80字以内）：`n" +
-              "1. 主体角色（如：1个绿衣男孩）`n" +
-              "2. 动作姿态（如：用手指着前方）`n" +
-              "3. 面部表情（如：自信微笑、沮丧、平静）`n" +
-              "4. 核心背景与道具（如：电脑房、全息发光灯泡）`n" +
-              "5. 色调与画风（如：3D动画画风、冷色调）"
-
-# 6. 逐张识别
-$nextIdx = $data.images.Count + 1
-$successCount = 0
-$failedCount = 0
-
-foreach ($img in $remaining) {
-    Write-Host "  [$nextIdx] $($img.Name)" -ForegroundColor Yellow
-
-    # 6.1 base64 编码
-    try {
-        $bytes = [System.IO.File]::ReadAllBytes($img.FullName)
-        $base64 = [Convert]::ToBase64String($bytes)
-        $mediaType = switch ($img.Extension.ToLower()) {
-            ".png"  { "image/png" }
-            ".jpg"  { "image/jpeg" }
-            ".jpeg" { "image/jpeg" }
-            ".webp" { "image/webp" }
-            default { "image/png" }
-        }
-    } catch {
-        Write-Host "    [错误] 读取图片失败: $_" -ForegroundColor Red
-        $data.images += @{
-            index       = $nextIdx
-            filename    = $img.Name
-            description = ""
-            error       = "read_failed: $_"
-        }
-        $failedCount++
-        $nextIdx++
-        $data | ConvertTo-Json -Depth 10 | Out-File $outputJson -Encoding UTF8
-        continue
-    }
-
-    # 6.2 构造请求体
-    $body = @{
-        username  = $username
-        passtoken = $passtoken
-        provider  = $provider
-        model     = $model
-        user_prompt = @(
-            @{
-                type = "image"
-                source = @{
-                    type       = "base64"
-                    media_type = $mediaType
-                    data       = $base64
-                }
-            }
-            @{
-                type = "text"
-                text = $textPrompt
-            }
-        )
-    }
-
-    # 6.3 重试调用
-    $ok = $false
-    $lastError = ""
-    for ($retry = 1; $retry -le $maxRetry; $retry++) {
-        try {
-            $jsonBody = $body | ConvertTo-Json -Depth 10 -Compress
-            $responseObj = Invoke-WebRequest `
-                -Uri $url `
-                -Method Post `
-                -ContentType "application/json; charset=utf-8" `
-                -Body $jsonBody `
-                -TimeoutSec 180
-
-            # Decode UTF-8 correctly
-            $rawString = ""
-            if ($responseObj.Content -is [string]) {
-                # If it's a string, it might have been decoded incorrectly, check if it needs recovery
-                try {
-                    $bytes = [System.Text.Encoding]::GetEncoding("ISO-8859-1").GetBytes($responseObj.Content)
-                    $rawString = [System.Text.Encoding]::UTF8.GetString($bytes)
-                } catch {
-                    $rawString = $responseObj.Content
-                }
-            } else {
-                $rawString = [System.Text.Encoding]::UTF8.GetString($responseObj.Content)
-            }
-            $response = ConvertFrom-Json $rawString
-
-            # 6.4 检查业务错误码
-            if ($response.code -ne 200) {
-                $lastError = "业务错误: code=$($response.code), message=$($response.message)"
-                Write-Host "    [重试 $retry/$maxRetry] $lastError" -ForegroundColor Gray
-                Start-Sleep -Milliseconds $retrySleepMs
-                continue
-            }
-
-            if (-not $response.data.processed_text) {
-                $lastError = "响应缺少 processed_text"
-                Write-Host "    [重试 $retry/$maxRetry] $lastError" -ForegroundColor Gray
-                Start-Sleep -Milliseconds $retrySleepMs
-                continue
-            }
-
-            # 6.5 成功
-            $description = $response.data.processed_text
-            $data.images += @{
-                index       = $nextIdx
-                filename    = $img.Name
-                description = $description
-            }
-            Write-Host "    $($description.Substring(0, [Math]::Min(60, $description.Length)))" -ForegroundColor Gray
-            $ok = $true
-            $successCount++
-            break
-        }
-        catch {
-            $statusCode = $_.Exception.Response.StatusCode.value__
-            $errorBody = ""
-            try {
-                $stream = $_.Exception.Response.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $errorBody = $reader.ReadToEnd()
-            } catch {}
-
-            # 401 / 402 立即停止（不要重试）
-            if ($statusCode -eq 401) {
-                throw "401 未授权：用户名或密码令牌错误"
-            }
-            if ($statusCode -eq 402) {
-                throw "402 积分不足：请充值 ServiceHub 账户"
-            }
-
-            $lastError = "HTTP $statusCode : $_"
-            if ($errorBody) { $lastError += " | body: $errorBody" }
-            Write-Host "    [重试 $retry/$maxRetry] $lastError" -ForegroundColor Gray
-            Start-Sleep -Milliseconds $retrySleepMs
-        }
-    }
-
-    if (-not $ok) {
-        $data.images += @{
-            index       = $nextIdx
-            filename    = $img.Name
-            description = ""
-            error       = "max_retry: $lastError"
-        }
-        $failedCount++
-    }
-
-    $nextIdx++
-    # 增量写入
-    $data | ConvertTo-Json -Depth 10 | Out-File $outputJson -Encoding UTF8
-}
-
-# 7. 更新最终统计
-$data.imageCount = $data.images.Count
-$data | ConvertTo-Json -Depth 10 | Out-File $outputJson -Encoding UTF8
-
-Write-Host ""
-Write-Host "==== 识别完成 ====" -ForegroundColor Cyan
-Write-Host "  总数: $($images.Count)"
-Write-Host "  已成功: $successCount"
-Write-Host "  本轮失败: $failedCount"
-Write-Host "  输出: $outputJson"
+Write-Host "  动作: 调用 scripts/recognize-images.ps1" -ForegroundColor Cyan
+& $mmxScriptPath -downloadDir $downloadDir -outputJson $outputJson -sleepMs $sleepMs -imageFilter $imageFilter

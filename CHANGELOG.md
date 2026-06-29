@@ -76,3 +76,13 @@
   2. `recognize-images-servicehub.ps1` 开始识别时**打印预估完成时间**（基于"剩余张数 × 8 秒" + "断点续传"提示）
   3. 三个脚本开头的 banner 加上**当前操作预估耗时**，让执行者有合理预期
   4. README.md "Performance" 章节明确"长处理时间是 by-design，不建议并发（受 M3 接口限制）"
+# Changelog
+
+## 2026-06-30
+
+- 修复 `extract-md-refs.ps1` 在 Windows PowerShell 5.1 下的 UTF-8 中文路径读取问题，改用 `.NET ReadAllText/WriteAllText`
+- 修复 `recognize-images.ps1`，新增断点续传与 `imageFilter` 参数
+- 调整 `recognize-images-servicehub.ps1` 为兼容包装器；保留旧入口，但默认自动回退到 `mmx CLI`
+- 修复 `apply-mapping.ps1` 的二次执行幂等性问题，新增 `-Mode create|sync|force|chain`
+- 新增链式重命名能力，修正“修正映射后二次重跑”场景
+- 更新 `SKILL.md` / `README.md` / `INSTALL.md` / `troubleshooting.md`，明确语义匹配边界和当前主路径

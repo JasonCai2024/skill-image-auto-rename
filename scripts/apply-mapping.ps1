@@ -1,19 +1,27 @@
-param(
-    [Parameter(Mandatory=$true)]
+﻿param(
+    [Parameter(Mandatory = $true)]
     [string]$downloadDir,
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory = $true)]
     [string]$mdPath,
 
-    [Parameter(Mandatory=$true)]
-    [string]$matchMapFile
+    [Parameter(Mandatory = $true)]
+    [string]$matchMapFile,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("create", "sync", "force", "chain")]
+    [string]$Mode = "sync"
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::InvariantCulture
+
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 function Get-ConfidenceState {
     param(
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory = $false)]
         $value
     )
 
@@ -29,11 +37,59 @@ function Get-ConfidenceState {
     return $text
 }
 
-# 1. 加载匹配表
-if (-not (Test-Path $matchMapFile)) {
+function Should-SkipMatch {
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$RefName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RefName)) {
+        return $true
+    }
+
+    $normalized = $RefName.Trim().ToLowerInvariant()
+    return $normalized -in @("无匹配", "skip", "unmatched", "-1")
+}
+
+function Get-FileHashSafe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return (Get-FileHash -LiteralPath $Path -Algorithm MD5).Hash
+}
+
+function Get-UniqueTempName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Directory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Extension
+    )
+
+    do {
+        $candidate = ".__air_tmp__{0}{1}" -f ([guid]::NewGuid().ToString("N")), $Extension
+        $candidatePath = Join-Path $Directory $candidate
+    } while (Test-Path -LiteralPath $candidatePath)
+
+    return $candidate
+}
+
+if (-not (Test-Path -LiteralPath $downloadDir)) {
+    throw "下载文件夹不存在: $downloadDir"
+}
+
+if (-not (Test-Path -LiteralPath $mdPath)) {
+    throw "MD 文件不存在: $mdPath"
+}
+
+if (-not (Test-Path -LiteralPath $matchMapFile)) {
     throw "匹配表文件不存在: $matchMapFile"
 }
-$matchMap = Get-Content -LiteralPath $matchMapFile -Raw -Encoding UTF8 | ConvertFrom-Json
+
+$matchMap = [System.IO.File]::ReadAllText($matchMapFile, $utf8NoBom) | ConvertFrom-Json
 
 $mdDir = Split-Path -Parent $mdPath
 $attachDir = Join-Path $mdDir "Attachments"
@@ -41,31 +97,37 @@ $attachDir = Join-Path $mdDir "Attachments"
 Write-Host "==== 应用匹配表 (基于文件名映射) ====" -ForegroundColor Cyan
 Write-Host "  匹配条数: $($matchMap.matches.Count)"
 Write-Host "  目标目录: $attachDir"
+Write-Host "  模式: $Mode"
 Write-Host "  规则: 仅复制到 MD 同级 Attachments；不读取 Obsidian attachmentFolderPath" -ForegroundColor Gray
 
-# 2. 执行重命名
 $matched = 0
 $skipped = 0
 $failed = 0
 $lowConfidenceSkipped = 0
 $missingConfidenceProcessed = 0
-$multiAssigned = @{}  # 记录每个目标引用名被匹配了几次
+$multiAssigned = @{}
 $filesToCopy = @{}
+$pendingRenames = @()
 
 foreach ($m in $matchMap.matches) {
-    $srcName = $m.filename
-    $dstName = $m.refName
+    $srcName = "$($m.filename)"
+    $dstName = if ($null -eq $m.refName) { "" } else { "$($m.refName)" }
     $confidence = Get-ConfidenceState -value $m.confidence
 
-    # 过滤掉无效/无匹配的分镜
-    if ([string]::IsNullOrEmpty($dstName) -or $dstName -eq "无匹配" -or $dstName -eq "-1") {
+    if ([string]::IsNullOrWhiteSpace($srcName)) {
+        Write-Host "  [跳过] 存在未提供 filename 的条目" -ForegroundColor Gray
+        $skipped++
+        continue
+    }
+
+    if (Should-SkipMatch -RefName $dstName) {
         Write-Host "  [跳过] 图片 $srcName 标记为无匹配或多余" -ForegroundColor Gray
         $skipped++
         continue
     }
 
     if ($confidence -in @("medium", "low")) {
-        Write-Host "  [跳过-$confidence] 图片 $srcName 置信度为 $confidence，保持原名且不复制" -ForegroundColor Gray
+        Write-Host "  [跳过-$confidence] 图片 $srcName 置信度为 $confidence，保留原名且不复制" -ForegroundColor Gray
         $skipped++
         $lowConfidenceSkipped++
         continue
@@ -75,14 +137,13 @@ foreach ($m in $matchMap.matches) {
         Write-Host "  [警告] 图片 $srcName 未提供 confidence，按高置信度兼容处理" -ForegroundColor Yellow
         $missingConfidenceProcessed++
     } elseif ($confidence -ne "high") {
-        Write-Host "  [跳过-$confidence] 图片 $srcName 置信度不支持自动应用，保持原名且不复制" -ForegroundColor Gray
+        Write-Host "  [跳过-$confidence] 图片 $srcName 置信度不支持自动应用，保留原名且不复制" -ForegroundColor Gray
         $skipped++
         continue
     }
 
-    # 检查同分镜被多次匹配
     if ($multiAssigned.ContainsKey($dstName)) {
-        Write-Host "  [冲突] 目标文件名 $dstName 被映射到多张图片！" -ForegroundColor Red
+        Write-Host "  [冲突] 目标文件名 $dstName 被映射到多张图片" -ForegroundColor Red
         $failed++
         continue
     }
@@ -91,43 +152,100 @@ foreach ($m in $matchMap.matches) {
     $srcPath = Join-Path $downloadDir $srcName
     $dstPath = Join-Path $downloadDir $dstName
 
-    # 检查源文件是否存在
-    if (-not (Test-Path -LiteralPath $srcPath)) {
-        # 如果源文件不存在，但目标文件已经存在，说明可能在之前的运行中已经重命名成功了
-        if (Test-Path -LiteralPath $dstPath) {
-            Write-Host "  [OK-已存在] $dstName (图片已在先前运行中重命名)" -ForegroundColor Gray
+    if (Test-Path -LiteralPath $srcPath) {
+        if ($srcName -eq $dstName) {
+            Write-Host "  [OK-原名一致] $dstName" -ForegroundColor Gray
             $matched++
-            $filesToCopy[$dstName] = $dstPath
+            $filesToCopy[$dstName] = $srcPath
             continue
         }
-        Write-Host "  [错误] 找不到源图片: $srcName" -ForegroundColor Red
-        $failed++
+
+        $pendingRenames += [PSCustomObject]@{
+            SrcName  = $srcName
+            DstName  = $dstName
+            SrcPath  = $srcPath
+            DstPath  = $dstPath
+            TempName = $null
+            TempPath = $null
+            Skip     = $false
+        }
         continue
     }
 
-    # 检查目标文件是否冲突
     if (Test-Path -LiteralPath $dstPath) {
-        Write-Host "  [冲突-目标存在] 目标文件名已存在，无法重命名: $srcName -> $dstName" -ForegroundColor Yellow
-        $skipped++
-        continue
-    }
-
-    try {
-        Rename-Item -LiteralPath $srcPath -NewName $dstName -ErrorAction Stop
-        Write-Host "  [OK] $srcName -> $dstName" -ForegroundColor Green
+        Write-Host "  [OK-已重命名] $dstName (图片已在先前运行中重命名)" -ForegroundColor Gray
         $matched++
         $filesToCopy[$dstName] = $dstPath
-    } catch {
-        Write-Host "  [失败] $srcName -> ${dstName}: $_" -ForegroundColor Red
-        $failed++
+        continue
+    }
+
+    Write-Host "  [错误] 找不到源图片: $srcName" -ForegroundColor Red
+    $failed++
+}
+
+if ($pendingRenames.Count -gt 0) {
+    $pendingSourceNames = @{}
+    foreach ($item in $pendingRenames) {
+        $pendingSourceNames[$item.SrcName] = $true
+    }
+
+    foreach ($item in $pendingRenames) {
+        $dstExists = Test-Path -LiteralPath $item.DstPath
+        $isPendingSource = $pendingSourceNames.ContainsKey($item.DstName)
+
+        if ($dstExists -and -not $isPendingSource) {
+            if ($Mode -eq "force") {
+                Remove-Item -LiteralPath $item.DstPath -Force
+                Write-Host "  [强制删除] 已移除现存目标文件: $($item.DstName)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  [冲突-目标存在] $($item.SrcName) -> $($item.DstName)；当前模式 $Mode 不覆盖下载目录中的现存目标文件" -ForegroundColor Yellow
+                $skipped++
+                $item.Skip = $true
+            }
+        }
+    }
+
+    foreach ($item in $pendingRenames | Where-Object { -not $_.Skip }) {
+        try {
+            $item.TempName = Get-UniqueTempName -Directory $downloadDir -Extension ([System.IO.Path]::GetExtension($item.SrcName))
+            $item.TempPath = Join-Path $downloadDir $item.TempName
+            Rename-Item -LiteralPath $item.SrcPath -NewName $item.TempName -ErrorAction Stop
+        } catch {
+            Write-Host "  [失败] 临时改名失败 $($item.SrcName): $_" -ForegroundColor Red
+            $failed++
+            $item.Skip = $true
+        }
+    }
+
+    foreach ($item in $pendingRenames | Where-Object { -not $_.Skip }) {
+        try {
+            if ((Test-Path -LiteralPath $item.DstPath) -and $Mode -eq "force") {
+                Remove-Item -LiteralPath $item.DstPath -Force
+            }
+
+            Rename-Item -LiteralPath $item.TempPath -NewName $item.DstName -ErrorAction Stop
+            Write-Host "  [OK] $($item.SrcName) -> $($item.DstName)" -ForegroundColor Green
+            $matched++
+            $filesToCopy[$item.DstName] = $item.DstPath
+        } catch {
+            Write-Host "  [失败] $($item.SrcName) -> $($item.DstName): $_" -ForegroundColor Red
+            $failed++
+
+            if ($item.TempPath -and (Test-Path -LiteralPath $item.TempPath)) {
+                try {
+                    Rename-Item -LiteralPath $item.TempPath -NewName $item.SrcName -ErrorAction Stop
+                } catch {
+                    Write-Host "  [警告] 回滚失败，临时文件仍在下载目录: $($item.TempName)" -ForegroundColor Yellow
+                }
+            }
+        }
     }
 }
 
-# 3. 复制到 Attachments
 Write-Host ""
 Write-Host "==== 复制到 Attachments ====" -ForegroundColor Cyan
 
-if (-not (Test-Path $attachDir)) {
+if (-not (Test-Path -LiteralPath $attachDir)) {
     New-Item -ItemType Directory -Path $attachDir -Force | Out-Null
     Write-Host "  [创建] $attachDir" -ForegroundColor Cyan
 }
@@ -142,6 +260,23 @@ foreach ($name in $filesToCopy.Keys | Sort-Object) {
 
     $dst = Join-Path $attachDir $name
     if (Test-Path -LiteralPath $dst) {
+        if ($Mode -eq "create") {
+            continue
+        }
+
+        if ($Mode -in @("sync", "chain")) {
+            $sameHash = (Get-FileHashSafe -Path $src) -eq (Get-FileHashSafe -Path $dst)
+            if ($sameHash) {
+                continue
+            }
+        }
+
+        try {
+            Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+            $copied++
+        } catch {
+            Write-Host "  [复制失败] ${name}: $_" -ForegroundColor Red
+        }
         continue
     }
 
@@ -155,7 +290,6 @@ foreach ($name in $filesToCopy.Keys | Sort-Object) {
 
 Write-Host "  复制完成: $copied 张"
 
-# 4. 总结
 Write-Host ""
 Write-Host "==== 完成 ====" -ForegroundColor Cyan
 Write-Host "  匹配/重命名成功: $matched"
