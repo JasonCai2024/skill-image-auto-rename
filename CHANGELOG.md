@@ -86,3 +86,10 @@
 - 修复 `apply-mapping.ps1` 的二次执行幂等性问题，新增 `-Mode create|sync|force|chain`
 - 新增链式重命名能力，修正“修正映射后二次重跑”场景
 - 更新 `SKILL.md` / `README.md` / `INSTALL.md` / `troubleshooting.md`，明确语义匹配边界和当前主路径
+# 2026-06-30
+
+- 恢复 `ServiceHub MiniMax-M3` 为图片识别主流程。
+- `scripts/recognize-images-servicehub.ps1` 不再是“只打印原因然后回退 mmx”的兼容包装器，改为直接调用 `https://www.ccailab.top/api/llm/paid-rotation`。
+- 多模态请求统一改为 `image_url.url = data:image/...;base64,...`，用于调用 `provider=minimax`、`model=MiniMax-M3`。
+- `scripts/recognize-images.ps1` 保留为应急备用路径，不再是默认主流程。
+- 更新 `SKILL.md`、`README.md`、`INSTALL.md`、`commands/skill-image-auto-rename.md`、`references/tool-servicehub-api.md`、`references/troubleshooting.md`，统一主流程描述。

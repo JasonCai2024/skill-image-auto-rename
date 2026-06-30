@@ -45,20 +45,33 @@ Copy-Item -Force $cmdSrc $cmdDst
 
 ## 必需环境
 
-主路径当前依赖 `mmx CLI`。
+主路径当前依赖 `ServiceHub`。
 
 准备项：
+1. 已有可用的 `ServiceHub` 用户名和 `passtoken`
+2. 可访问 `https://www.ccailab.top`
+3. 默认走 `provider=minimax` + `model=MiniMax-M3`
+
+## 备用环境
+
+若你希望保留应急能力，可额外准备：
 1. 已安装 `mmx CLI`
 2. `mmx auth status` 可通过
-3. 能访问模型服务
 
 ## ServiceHub 说明
 
-如果仍沿用旧命令 `scripts/recognize-images-servicehub.ps1`：
-- 它现在不会继续发送历史多模态数组 + base64 请求
-- 它会打印原因后自动回退到 `scripts/recognize-images.ps1`
+主脚本 `scripts/recognize-images-servicehub.ps1` 现在会直接发送多模态识图请求到：
 
-这是为了兼容旧工作流入口，不是新的主推荐路径。
+```text
+https://www.ccailab.top/api/llm/paid-rotation
+```
+
+默认参数：
+- `provider = minimax`
+- `model = MiniMax-M3`
+- 图片通过 `image_url.url = data:image/...;base64,...` 发送
+
+`scripts/recognize-images.ps1` 不再是主路径，只作为备用。
 
 ## PowerShell 5.1 编码要求
 

@@ -4,8 +4,8 @@
 
 ## 当前状态
 
-- `mmx CLI` 是主选识别通道。
-- `ServiceHub` 旧入口仍保留，但已经改成兼容包装器，默认自动回退到 `mmx CLI`。
+- `ServiceHub` 的 `MiniMax-M3` 是主选识别通道。
+- `mmx CLI` 保留为应急备用路径。
 - `apply-mapping.ps1` 现在支持 `create/sync/force/chain` 四种模式。
 - 所有 PowerShell 脚本都要求以 `UTF-8 with BOM` 保存，避免 Windows PowerShell 5.1 中文乱码。
 
@@ -13,16 +13,17 @@
 
 2026-06-30 实测结果：
 - `https://www.ccailab.top/api/llm/paid-rotation`
-- 纯文本 `user_prompt` 返回 `200`
-- 历史多模态数组 + base64 图片请求返回 `422`
+- 使用 `provider=minimax` + `model=MiniMax-M3`
+- 通过 `image_url.url = data:image/...;base64,...` 发送图片
+- 返回 `200`，可正常识别图片
 
-因此，旧版“直接走 ServiceHub M3 多模态识别”的主路径已经不可靠。当前仓库把 `mmx CLI` 明确设为主通道，并把旧入口保留为兼容包装器，避免依赖方因命令名变化而直接报错。
+因此，当前仓库已恢复为“直接走 ServiceHub M3 多模态识别”的主路径，`mmx CLI` 只在应急时使用。
 
 ## 核心流程
 
 1. `scripts/extract-md-refs.ps1`
    读取 MD，输出 `_refs.json`
-2. `scripts/recognize-images.ps1`
+2. `scripts/recognize-images-servicehub.ps1`
    识别图片，输出 `_images.json`
 3. AI agent 自己做语义匹配
    读取两份 JSON，生成 `match_map.json`

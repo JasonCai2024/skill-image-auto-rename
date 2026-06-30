@@ -1,6 +1,6 @@
 ---
 name: skill-image-auto-rename
-description: 将下载文件夹中批量生成的 AI 配图做结构化识别与语义匹配，自动按 MD 引用名重命名并复制到 MD 同级 Attachments。当前主路径为 mmx CLI，ServiceHub 脚本已改为兼容包装器并自动回退到 mmx。
+description: 将下载文件夹中批量生成的 AI 配图做结构化识别与语义匹配，自动按 MD 引用名重命名并复制到 MD 同级 Attachments。当前主路径为 ServiceHub 的 MiniMax-M3 图片识别接口，mmx CLI 仅作应急备用。
 disable-model-invocation: true
 user-invocable: true
 argument-hint: [MD文档路径]
@@ -27,8 +27,8 @@ argument-hint: [MD文档路径]
 1. `MD 文档路径`
 2. `下载图片文件夹路径`
 3. `识别通道`
-   - `mmx CLI`：主选，当前推荐路径
-   - `ServiceHub wrapper`：仅兼容旧入口，脚本会自动回退到 `mmx CLI`
+   - `ServiceHub MiniMax-M3`：主选，当前推荐路径
+   - `mmx CLI`：仅应急备用
 4. `匹配方式`
    - `语义匹配`：默认
    - `顺序匹配`：仅当用户明确确认下载顺序等于分镜顺序时可用
@@ -71,14 +71,6 @@ powershell -NoProfile -File "<技能目录>\scripts\extract-md-refs.ps1" `
 主选：
 
 ```powershell
-powershell -NoProfile -File "<技能目录>\scripts\recognize-images.ps1" `
-  -downloadDir "<下载目录>" `
-  -outputJson "<_images.json路径>"
-```
-
-兼容旧入口：
-
-```powershell
 powershell -NoProfile -File "<技能目录>\scripts\recognize-images-servicehub.ps1" `
   -downloadDir "<下载目录>" `
   -outputJson "<_images.json路径>" `
@@ -86,10 +78,20 @@ powershell -NoProfile -File "<技能目录>\scripts\recognize-images-servicehub.
   -passtoken "<ServiceHub passtoken>"
 ```
 
+备用：
+
+```powershell
+powershell -NoProfile -File "<技能目录>\scripts\recognize-images.ps1" `
+  -downloadDir "<下载目录>" `
+  -outputJson "<_images.json路径>"
+```
+
 说明：
-- `recognize-images.ps1` 现在支持断点续传。
-- `recognize-images-servicehub.ps1` 不再直接发历史多模态请求，而是打印原因后自动回退到 `mmx CLI`。
-- 2026-06-30 实测 `https://www.ccailab.top/api/llm/paid-rotation`：纯文本 `user_prompt` 返回 `200`，历史多模态数组 + base64 图片请求返回 `422`。
+- `recognize-images-servicehub.ps1` 现在直接调用 `https://www.ccailab.top/api/llm/paid-rotation`
+- 使用 `provider=minimax`、`model=MiniMax-M3`
+- 图片通过 `image_url.url = data:image/...;base64,...` 发送
+- `recognize-images.ps1` 保留为应急备用路径
+- 两个识别脚本都支持断点续传
 
 ### 第 3 步：AI agent 自己做语义匹配
 
@@ -165,8 +167,8 @@ powershell -NoProfile -File "<技能目录>\scripts\apply-mapping.ps1" `
 
 ## Decision Rules
 
-- 优先使用 `mmx CLI`
-- `ServiceHub` 仅保留为兼容入口，不再作为主路径描述
+- 优先使用 `ServiceHub MiniMax-M3`
+- 只有在 ServiceHub 不可用且用户接受时，才切到 `mmx CLI`
 - 目标输出目录固定为 `<MD所在目录>\Attachments`
 - 不读取 `.obsidian/app.json`
 - 内容一致性优先于时间顺序
@@ -190,8 +192,8 @@ powershell -NoProfile -File "<技能目录>\scripts\apply-mapping.ps1" `
 ## Related Files
 
 - `scripts/extract-md-refs.ps1`
-- `scripts/recognize-images.ps1`
 - `scripts/recognize-images-servicehub.ps1`
+- `scripts/recognize-images.ps1`
 - `scripts/apply-mapping.ps1`
 - `references/tool-servicehub-api.md`
 - `references/troubleshooting.md`

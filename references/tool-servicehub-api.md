@@ -1,30 +1,36 @@
-# ServiceHub 兼容性说明
+# ServiceHub 接口说明
 
 ## 结论
 
-截至 2026-06-30，本仓库不再把 ServiceHub `/api/llm/paid-rotation` 当成可直接承载历史多模态图片识别请求的主路径。
+截至 2026-06-30，本仓库已恢复把 ServiceHub `/api/llm/paid-rotation` 当成图片识别主路径。
 
 实测现象：
 - 端点：`https://www.ccailab.top/api/llm/paid-rotation`
-- `user_prompt` 为纯文本字符串时：`200`
-- `user_prompt` 为历史多模态数组，且图片以 base64 内联时：`422`
+- `provider = minimax`
+- `model = MiniMax-M3`
+- `user_prompt` 使用 OpenAI 风格多模态数组
+- `image_url.url` 直接传 `data:image/...;base64,...`
+- 生产环境返回：`200`
 
-因此，旧版这类请求体当前不可用：
+推荐请求体：
 
 ```json
 {
+  "username": "<username>",
+  "passtoken": "<passtoken>",
+  "provider": "minimax",
+  "model": "MiniMax-M3",
+  "task_type": "text_arrange",
   "user_prompt": [
     {
-      "type": "image",
-      "source": {
-        "type": "base64",
-        "media_type": "image/png",
-        "data": "<base64>"
-      }
+      "type": "text",
+      "text": "描述这张图片，并提取可见文字。"
     },
     {
-      "type": "text",
-      "text": "describe this image"
+      "type": "image_url",
+      "image_url": {
+        "url": "data:image/png;base64,<base64>"
+      }
     }
   ]
 }
@@ -33,16 +39,11 @@
 ## 当前仓库策略
 
 - `scripts/recognize-images-servicehub.ps1`
-  保留文件名不变，只做兼容包装器
-- 实际识别工作
-  自动委托给 `scripts/recognize-images.ps1`
+  直接调用 ServiceHub 识别图片
+- `scripts/recognize-images.ps1`
+  仅保留作应急备用
 
-## 如果未来要恢复 ServiceHub
+## 注意事项
 
-至少需要以下任一条件：
-
-1. ServiceHub 明确支持图片多模态数组
-2. ServiceHub 提供“先上传图片，再给 URL”的稳定工作流
-3. 仓库里能拿到该工作流的正式参数规范和返回样例
-
-在条件没明确前，不建议再把 ServiceHub 写回主路径。
+1. 默认主流程使用 `image_url + data URI`，不要再沿用旧的 `image/source/base64` 历史 payload。
+2. 若服务端再次变更契约，应先复测生产端点，再更新本仓库文档和脚本。

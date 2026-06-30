@@ -13,15 +13,16 @@
 - 把脚本重新保存为 `UTF-8 with BOM`
 - 重新运行技能
 
-## 2. ServiceHub 返回 422
+## 2. ServiceHub 返回 4xx / 5xx
 
 现状：
-- 这是当前已知兼容性问题
-- 仓库已不再直接走历史多模态请求
+- 当前主路径就是 ServiceHub 多模态识图
+- 若报错，优先检查凭证、网络和服务端状态
 
 处理：
-- 改用 `scripts/recognize-images.ps1`
-- 或继续调用 `scripts/recognize-images-servicehub.ps1`，它会自动回退到 `mmx`
+- 先确认 `SERVICETUBER_USERNAME` / `SERVICETUBER_PASSTOKEN` 是否正确
+- 再确认 `https://www.ccailab.top/api/llm/paid-rotation` 当前是否可访问
+- 若用户允许，再改用 `scripts/recognize-images.ps1`
 
 ## 3. 二次重跑后 Attachments 没更新
 
